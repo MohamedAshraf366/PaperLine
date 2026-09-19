@@ -66,12 +66,15 @@ const KINDS: Record<string, string> = {
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
   "text/csv": "csv",
+  "image/png": "png",
+  "image/jpeg": "jpg",
+  "image/bmp": "bmp",
 };
 
 function kindFor(file: File): string | null {
   if (KINDS[file.type]) return KINDS[file.type]!;
   const ext = file.name.split(".").pop()?.toLowerCase();
-  if (ext && ["pdf", "docx", "xlsx", "csv"].includes(ext)) return ext;
+  if (ext && ["pdf", "docx", "xlsx", "csv", "png", "jpg", "jpeg", "bmp"].includes(ext)) return ext;
   return null;
 }
 
@@ -230,7 +233,7 @@ function DocumentsPage() {
           ref={inputRef}
           type="file"
           multiple
-          accept=".pdf,.docx,.xlsx,.csv"
+          accept=".pdf,.docx,.xlsx,.csv,.png,.jpg,.jpeg,.bmp"
           className="hidden"
           onChange={(e) => onFiles(e.target.files)}
         />
@@ -321,6 +324,7 @@ function DocumentsPage() {
               <Link
                 to="/documents/$documentId"
                 params={{ documentId: doc.id }}
+                search={{ q: "" }}
                 className="block truncate font-medium hover:underline"
               >
                 {doc.name}

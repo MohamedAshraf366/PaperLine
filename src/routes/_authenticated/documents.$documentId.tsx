@@ -1,13 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useServerFn } from "@tanstack/react-start";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { RotateCw } from "lucide-react";
 import { useWorkspace, formatBytes } from "@/hooks/useWorkspace";
 import {
   getDocument,
-  getDocumentPages,
   askQuestion,
   reprocessDocument,
   type Citation,
@@ -20,6 +19,9 @@ import { cn } from "@/lib/utils";
 import { useI18n } from "@/i18n";
 
 export const Route = createFileRoute("/_authenticated/documents/$documentId")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    q: typeof search["q"] === "string" ? search["q"] : undefined,
+  }),
   head: () => ({
     meta: [
       { title: "Document — Paperline" },
@@ -31,19 +33,45 @@ export const Route = createFileRoute("/_authenticated/documents/$documentId")({
   component: DocumentPage,
 });
 
+function escapeRegExp(input: string): string {
+  return input.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function HighlightedText({ text, query }: { text: string; query: string }) {
+  const q = query.trim();
+  if (!q) return <p className="text-sm leading-relaxed whitespace-pre-wrap">{text}</p>;
+  const parts = text.split(new RegExp(`(${escapeRegExp(q)})`, "ig"));
+  return (
+    <p className="text-sm leading-relaxed whitespace-pre-wrap">
+      {parts.map((part, i) =>
+        part.toLowerCase() === q.toLowerCase() ? (
+          <mark
+            key={i}
+            className="rounded-sm bg-yellow-200 px-0.5 text-inherit dark:bg-yellow-900/60"
+          >
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
+    </p>
+  );
+}
+
 function DocumentPage() {
   const { documentId } = Route.useParams();
+  const q = Route.useSearch().q ?? "";
   const { data: ctx } = useWorkspace();
+  const contentRef = useRef<HTMLDivElement>(null);
   const { t } = useI18n();
   const queryClient = useQueryClient();
   const fetchDoc = useServerFn(getDocument);
-  const fetchPages = useServerFn(getDocumentPages);
   const ask = useServerFn(askQuestion);
   const reprocess = useServerFn(reprocessDocument);
   const [question, setQuestion] = useState("");
   const [busy, setBusy] = useState(false);
   const [retrying, setRetrying] = useState(false);
-  const [pageIndex, setPageIndex] = useState(0);
   const [answer, setAnswer] = useState<{ answer: string; citations: Citation[] } | null>(null);
 
   const { data, isLoading } = useQuery({
@@ -51,10 +79,13 @@ function DocumentPage() {
     queryFn: () => fetchDoc({ data: { documentId } }),
   });
 
-  const { data: pages } = useQuery({
-    queryKey: ["document-pages", documentId],
-    queryFn: () => fetchPages({ data: { documentId } }),
-  });
+  const content = (data?.document as { content: string | null } | undefined)?.content ?? "";
+
+  useEffect(() => {
+    if (!q || !content) return;
+    const first = contentRef.current?.querySelector("mark");
+    if (first) first.scrollIntoView({ behavior: "smooth", block: "center" });
+  }, [q, content]);
 
   if (isLoading) return <p className="text-muted-foreground">{t("document.loading")}</p>;
   if (!data) return <p className="text-muted-foreground">{t("document.notFound")}</p>;
@@ -81,7 +112,6 @@ function DocumentPage() {
       }
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ["document", documentId] }),
-        queryClient.invalidateQueries({ queryKey: ["document-pages", documentId] }),
         queryClient.invalidateQueries({ queryKey: ["documents"] }),
         queryClient.invalidateQueries({ queryKey: ["workspace-context"] }),
       ]);
@@ -142,6 +172,14 @@ function DocumentPage() {
         </CollapsibleSection>
       )}
 
+      {content && (
+        <CollapsibleSection title={t("document.content")}>
+          <div ref={contentRef}>
+            <HighlightedText text={content} query={q} />
+          </div>
+        </CollapsibleSection>
+      )}
+
       <CollapsibleSection title={t("document.askTitle")}>
         <form onSubmit={submit} className="space-y-3">
           <Textarea
@@ -166,17 +204,10 @@ function DocumentPage() {
                 <ol className="mt-2 space-y-2">
                   {answer.citations.map((c, i) => (
                     <li key={i} className="rounded-md bg-muted px-3 py-2 text-xs">
-                      <button
-                        type="button"
-                        className="font-medium hover:underline"
-                        onClick={() => {
-                          const idx = (pages ?? []).findIndex((p) => p.page === c.page);
-                          if (idx >= 0) setPageIndex(idx);
-                        }}
-                      >
+                      <p className="font-medium">
                         [{i + 1}] {c.documentName}
                         {c.page ? `, ${t("common.page").toLowerCase()} ${c.page}` : ""}
-                      </button>
+                      </p>
                       <p className="mt-1 text-muted-foreground">{c.snippet}…</p>
                     </li>
                   ))}
@@ -186,42 +217,6 @@ function DocumentPage() {
           </div>
         )}
       </CollapsibleSection>
-
-      {(pages ?? []).length > 0 && (
-        <CollapsibleSection title={t("document.pages")}>
-          <div className="space-y-4">
-            <div className="flex items-center gap-3">
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={pageIndex === 0}
-                onClick={() => setPageIndex((i) => Math.max(0, i - 1))}
-              >
-                {t("document.previous")}
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                {t("document.pageOf", {
-                  page: pages![Math.min(pageIndex, pages!.length - 1)]!.page,
-                  total: pages!.length,
-                })}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={pageIndex >= pages!.length - 1}
-                onClick={() => setPageIndex((i) => Math.min(pages!.length - 1, i + 1))}
-              >
-                {t("document.next")}
-              </Button>
-            </div>
-            <div className="rounded-md border border-border bg-card p-4">
-              <p className="text-sm leading-relaxed whitespace-pre-wrap">
-                {pages![Math.min(pageIndex, pages!.length - 1)]!.text}
-              </p>
-            </div>
-          </div>
-        </CollapsibleSection>
-      )}
     </div>
   );
 }

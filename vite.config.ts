@@ -22,6 +22,10 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    exclude: ["@tanstack/react-start"],
+    exclude: [
+      "@tanstack/react-start",
+      "@napi-rs/canvas",
+      "@napi-rs/canvas-win32-x64-msvc",
+    ],
   },
 });

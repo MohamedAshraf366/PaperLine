@@ -180,6 +180,8 @@ async function ingestDocument(opts: {
       }
     });
 
+    // Summarising is best-effort — an AI outage (e.g. exhausted credits) must
+    // not block the document from becoming ready. QA can catch up once AI works.
     const summarising = chat(
       [
         {
@@ -190,7 +192,7 @@ async function ingestDocument(opts: {
         { role: "user", content: `Document: ${name}\n\n${parsed.text.slice(0, 40000)}` },
       ],
       { maxTokens: 700 },
-    );
+    ).catch(() => null);
 
     const [, summary] = await Promise.all([indexing, summarising]);
 
@@ -434,27 +436,4 @@ export const searchWeb = createServerFn({ method: "POST" })
       ],
       { maxTokens: 900 },
     );
-  });
-
-/** Returns the document's text split page by page, for the page-by-page reader. */
-export const getDocumentPages = createServerFn({ method: "GET" })
-  .middleware([requireSupabaseAuth])
-  .inputValidator((data: { documentId: string }) => data)
-  .handler(async ({ data, context }): Promise<{ page: number; text: string }[]> => {
-    const { data: rows, error } = await context.supabase
-      .from("paperline_document_chunks")
-      .select("content, page_number, chunk_index")
-      .eq("document_id", data.documentId)
-      .order("chunk_index", { ascending: true });
-    if (error) throw new Error(error.message);
-    const byPage = new Map<number, string[]>();
-    for (const row of rows ?? []) {
-      const page = row.page_number ?? 1;
-      const list = byPage.get(page) ?? [];
-      list.push(row.content);
-      byPage.set(page, list);
-    }
-    return [...byPage.entries()]
-      .sort((a, b) => a[0] - b[0])
-      .map(([page, parts]) => ({ page, text: parts.join("\n\n") }));
   });

@@ -3,7 +3,8 @@ const USE_OPENROUTER = BASE_URL.includes("openrouter.ai");
 export const CHAT_MODEL =
   process.env["CHAT_MODEL"] ?? (USE_OPENROUTER ? "openai/gpt-4o" : "gpt-4o");
 export const EMBED_MODEL =
-  process.env["EMBED_MODEL"] ?? (USE_OPENROUTER ? "text-embedding-3-large" : "text-embedding-3-large");
+  process.env["EMBED_MODEL"] ??
+  (USE_OPENROUTER ? "text-embedding-3-large" : "text-embedding-3-large");
 
 function apiKey(): string {
   const preferred = USE_OPENROUTER
@@ -102,7 +103,14 @@ export async function chatWeb(
       }[];
     };
   };
-  const raw = json.choices[0] as { message?: { content?: string; annotations?: { type?: string; url_citation?: { url?: string; title?: string } }[] } } | undefined;
+  const raw = json.choices[0] as
+    | {
+        message?: {
+          content?: string;
+          annotations?: { type?: string; url_citation?: { url?: string; title?: string } }[];
+        };
+      }
+    | undefined;
   const message = raw?.message;
   const seen = new Set<string>();
   const sources: WebSource[] = [];

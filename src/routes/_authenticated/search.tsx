@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useServerFn } from "@tanstack/react-start";
 import { useState } from "react";
 import { toast } from "sonner";
-import { Globe, ExternalLink } from "lucide-react";
+import { Globe, ExternalLink, Loader2 } from "lucide-react";
 import { useWorkspace } from "@/hooks/useWorkspace";
 import { searchDocuments, searchWeb } from "@/lib/documents.functions";
 import { Input } from "@/components/ui/input";
@@ -50,7 +50,9 @@ function SearchPage() {
     setBusy(true);
     resetResults();
     try {
-      setHits(await search({ data: { workspaceId: ctx.workspace.id, query } }));
+      const result = await search({ data: { workspaceId: ctx.workspace.id, query } });
+      setHits(result);
+      if (result.length === 0) await runWebSearch();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t("errors.searchFailed"));
     } finally {
@@ -93,6 +95,7 @@ function SearchPage() {
             <Link
               to="/documents/$documentId"
               params={{ documentId: hit.documentId }}
+              search={{ q: query }}
               className="font-medium hover:underline"
             >
               {hit.documentName}
@@ -102,14 +105,23 @@ function SearchPage() {
         ))}
       </div>
 
-      {hits?.length === 0 && (
+      {hits?.length === 0 && (webBusy || !web) && (
         <Card>
           <CardContent className="space-y-4 pt-6">
-            <p className="text-sm text-muted-foreground">{t("search.webHint")}</p>
-            <Button onClick={runWebSearch} disabled={webBusy}>
-              <Globe className="me-2 h-4 w-4" aria-hidden />
-              {webBusy ? t("search.searchingWeb") : t("search.searchWeb")}
-            </Button>
+            {webBusy ? (
+              <p className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                {t("search.searchingWeb")}
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-muted-foreground">{t("search.webHint")}</p>
+                <Button onClick={runWebSearch} disabled={webBusy}>
+                  <Globe className="me-2 h-4 w-4" aria-hidden />
+                  {t("search.searchWeb")}
+                </Button>
+              </>
+            )}
           </CardContent>
         </Card>
       )}

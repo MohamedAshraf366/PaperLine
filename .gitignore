@@ -1,6 +1,6 @@
 # Logs
 logs
-*.log
+*.log*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
@@ -12,13 +12,19 @@ dist
 dist-ssr
 .output
 .vinxi
-.tanstack/**
+.tanstack/
 .nitro
 *.local
 
+# Vercel build output
+.vercel
+
 # Secrets
 .env
-.env.*
+.env.local
+.env.development.local
+.env.production.local
+.env.example.local
 !.env.example
 
 # Wrangler / Cloudflare
@@ -26,12 +32,20 @@ dist-ssr
 .dev.vars
 
 # Editor directories and files
-.vscode/*
+.vscode/
 !.vscode/extensions.json
-.idea
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
+*.tsbuildinfo
+*.tsbuildinfo.json
+
+# OS dumps
+Thumbs.db
+ehthumbs.db
+
+nul

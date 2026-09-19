@@ -114,6 +114,7 @@ function Dashboard() {
               key={doc.id}
               to="/documents/$documentId"
               params={{ documentId: doc.id }}
+              search={{ q: "" }}
               className="flex items-center gap-3 rounded-md border border-border px-3 py-2 hover:bg-accent"
             >
               <FileText className="h-4 w-4 text-primary" aria-hidden />
