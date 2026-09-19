@@ -2,14 +2,11 @@ import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import { nitro } from "nitro/vite";
 import path from "node:path";
 
 export default defineConfig({
-  plugins: [
-    tanstackStart(),
-    react(),
-    tailwindcss(),
-  ],
+  plugins: [tanstackStart(), nitro(), react(), tailwindcss()],
 
   resolve: {
     alias: {
@@ -22,10 +19,6 @@ export default defineConfig({
   },
 
   optimizeDeps: {
-    exclude: [
-      "@tanstack/react-start",
-      "@napi-rs/canvas",
-      "@napi-rs/canvas-win32-x64-msvc",
-    ],
+    exclude: ["@tanstack/react-start"],
   },
 });

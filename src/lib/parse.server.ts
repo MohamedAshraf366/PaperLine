@@ -1,4 +1,4 @@
-import { unzipSync, strFromU8 } from "fflate";
+import { unzipSync, strFromU8, zlibSync } from "fflate";
 
 type PdfProxy = Awaited<ReturnType<typeof import("unpdf").getDocumentProxy>>;
 
@@ -55,14 +55,62 @@ function pickLargest(images: ExtractedImage[]): ExtractedImage | null {
   return best;
 }
 
+function crc32(buf: Uint8Array): number {
+  let crc = ~0;
+  for (const byte of buf) {
+    crc ^= byte;
+    for (let i = 0; i < 8; i++) crc = (crc >>> 1) ^ (0xedb88320 & -(crc & 1));
+  }
+  return ~crc >>> 0;
+}
+
+function pngChunk(type: string, data: Uint8Array): Uint8Array {
+  const typeBytes = new TextEncoder().encode(type);
+  const body = new Uint8Array(typeBytes.length + data.length);
+  body.set(typeBytes, 0);
+  body.set(data, typeBytes.length);
+  const out = new Uint8Array(12 + data.length);
+  new DataView(out.buffer).setUint32(0, data.length);
+  out.set(typeBytes, 4);
+  out.set(data, 8);
+  new DataView(out.buffer).setUint32(8 + data.length, crc32(body));
+  return out;
+}
+
+/** Encodes RGBA (8-bit) pixels into a minimal PNG (filter type 0). */
+export function encodePng(width: number, height: number, rgba: Uint8Array): Uint8Array {
+  const stride = width * 4;
+  const raw = new Uint8Array(height * (stride + 1));
+  for (let y = 0; y < height; y++) {
+    raw[y * (stride + 1)] = 0;
+    raw.set(rgba.subarray(y * stride, y * stride + stride), y * (stride + 1) + 1);
+  }
+  const ihdr = new Uint8Array(13);
+  const view = new DataView(ihdr.buffer);
+  view.setUint32(0, width);
+  view.setUint32(4, height);
+  ihdr[8] = 8; // bit depth
+  ihdr[9] = 6; // color type RGBA
+  const signature = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdrChunk = pngChunk("IHDR", ihdr);
+  const idatChunk = pngChunk("IDAT", zlibSync(raw, { level: 6 }));
+  const iendChunk = pngChunk("IEND", new Uint8Array(0));
+  const out = new Uint8Array(
+    signature.length + ihdrChunk.length + idatChunk.length + iendChunk.length,
+  );
+  out.set(signature, 0);
+  out.set(ihdrChunk, signature.length);
+  out.set(idatChunk, signature.length + ihdrChunk.length);
+  out.set(iendChunk, signature.length + ihdrChunk.length + idatChunk.length);
+  return out;
+}
+
 /** Re-encodes raw extracted image pixels into a PNG buffer for Tesseract. */
-async function rawToPng(img: ExtractedImage): Promise<Buffer> {
+function rawToPng(img: ExtractedImage): Buffer {
   if (img.channels !== 1 && img.channels !== 3 && img.channels !== 4) {
     throw new Error(`Unsupported image channel count: ${img.channels}`);
   }
-  const { createCanvas, ImageData } = await import("@napi-rs/canvas");
-  const canvas = createCanvas(img.width, img.height);
-  const rgba = new Uint8ClampedArray(img.width * img.height * 4);
+  const rgba = new Uint8Array(img.width * img.height * 4);
   const { data, channels } = img;
   if (channels === 4) rgba.set(data);
   else {
@@ -76,8 +124,7 @@ async function rawToPng(img: ExtractedImage): Promise<Buffer> {
       rgba[i * 4 + 3] = 255;
     }
   }
-  canvas.getContext("2d").putImageData(new ImageData(rgba, img.width, img.height), 0, 0);
-  return Buffer.from(await canvas.encode("png"));
+  return Buffer.from(encodePng(img.width, img.height, rgba));
 }
 
 /** Transcribes an image-only (scanned) PDF page by page with local Tesseract OCR. */
@@ -85,10 +132,11 @@ async function ocrPdf(pdf: PdfProxy, totalPages: number): Promise<ParsedDoc> {
   const { extractImages } = await import("unpdf");
   const { createWorker } = await import("tesseract.js");
   const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
 
   const pagesToScan = Math.min(totalPages, MAX_OCR_PAGES);
   const transcripts: string[] = new Array(pagesToScan);
-  const cachePath = join(process.cwd(), "node_modules", ".cache", "tesseract");
+  const cachePath = join(tmpdir(), "tesseract");
   const engine = await createWorker("eng", 1, { cachePath, logger: () => {} });
 
   try {
@@ -233,8 +281,9 @@ function parseCsv(bytes: Uint8Array): ParsedDoc {
 async function parseImage(bytes: Uint8Array): Promise<ParsedDoc> {
   const { createWorker } = await import("tesseract.js");
   const { join } = await import("node:path");
+  const { tmpdir } = await import("node:os");
 
-  const cachePath = join(process.cwd(), "node_modules", ".cache", "tesseract");
+  const cachePath = join(tmpdir(), "tesseract");
   const engine = await createWorker("eng", 1, { cachePath, logger: () => {} });
   try {
     const { data } = await engine.recognize(Buffer.from(bytes));
