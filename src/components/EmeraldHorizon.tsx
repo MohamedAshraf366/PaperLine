@@ -73,6 +73,7 @@ export function EmeraldHorizon({ className = "", ...props }: EmeraldHorizonProps
     const variationLoc = gl.getUniformLocation(program, "u_variation")!;
     const glowLoc = gl.getUniformLocation(program, "u_glow")!;
     const vignetteLoc = gl.getUniformLocation(program, "u_vignette")!;
+    const opacityLoc = gl.getUniformLocation(program, "u_opacity")!;
     const positionLoc = gl.getAttribLocation(program, "position");
 
     const buffer = gl.createBuffer()!;
