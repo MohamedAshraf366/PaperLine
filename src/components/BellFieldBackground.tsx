@@ -1,9 +1,6 @@
 import { useEffect, useRef } from "react";
 import { webgl, type DrawFn } from "@/lib/webgl-manager";
-import {
-  BELL_FIELD_VERTEX_SHADER,
-  BELL_FIELD_FRAGMENT_SHADER,
-} from "@/lib/bell-field-shaders";
+import { BELL_FIELD_VERTEX_SHADER, BELL_FIELD_FRAGMENT_SHADER } from "@/lib/shaders";
 
 export type BellFieldBackgroundProps = {
   speed?: number;

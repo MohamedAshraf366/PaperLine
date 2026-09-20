@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { webgl, type DrawFn } from "@/lib/webgl-manager";
-import { AMBER_MESH_VERTEX_SHADER, AMBER_MESH_FRAGMENT_SHADER } from "@/lib/amber-mesh-shaders";
+import { AMBER_MESH_VERTEX_SHADER, AMBER_MESH_FRAGMENT_SHADER } from "@/lib/shaders";
 
 export type AmberMeshProps = {
   speed?: number;

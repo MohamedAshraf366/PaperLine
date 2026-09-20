@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { webgl, type DrawFn } from "@/lib/webgl-manager";
-import { ENERGY_ORB_VERTEX_SHADER, ENERGY_ORB_CONFIGURABLE_FRAGMENT_SHADER } from "@/lib/energy-orb-shaders";
+import { ENERGY_ORB_VERTEX_SHADER, ENERGY_ORB_CONFIGURABLE_FRAGMENT_SHADER } from "@/lib/shaders";
 
 export type EnergyOrbProps = {
   speed?: number;

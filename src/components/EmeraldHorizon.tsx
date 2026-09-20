@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { webgl, type DrawFn } from "@/lib/webgl-manager";
-import { EMERALD_HORIZON_VERTEX_SHADER, EMERALD_HORIZON_FRAGMENT_SHADER } from "@/lib/emerald-horizon-shaders";
+import { EMERALD_HORIZON_VERTEX_SHADER, EMERALD_HORIZON_FRAGMENT_SHADER } from "@/lib/shaders";
 
 export type EmeraldHorizonProps = {
   speed?: number;

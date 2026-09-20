@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { webgl, type DrawFn } from "@/lib/webgl-manager";
-import { CORE_UPLINK_VERTEX_SHADER, CORE_UPLINK_FRAGMENT_SHADER } from "@/lib/dot-matrix-shaders";
+import { CORE_UPLINK_VERTEX_SHADER, CORE_UPLINK_FRAGMENT_SHADER } from "@/lib/shaders";
 
 export type DotMatrixProps = {
   speed?: number;

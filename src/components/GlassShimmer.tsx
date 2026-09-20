@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { webgl, type DrawFn } from "@/lib/webgl-manager";
-import { GLASS_SHIMMER_VERTEX_SHADER, GLASS_SHIMMER_FRAGMENT_SHADER } from "@/lib/glass-shimmer-shaders";
+import { GLASS_SHIMMER_VERTEX_SHADER, GLASS_SHIMMER_FRAGMENT_SHADER } from "@/lib/shaders";
 
 export type GlassShimmerProps = {
   speed?: number;
