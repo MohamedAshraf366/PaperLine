@@ -34,7 +34,8 @@ export function BellFieldBackground({
     if (!webgl.hasContext) return;
 
     const opts = optionsRef.current;
-    const gl = webgl.getContext!;
+    const gl = webgl.gl;
+    if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
@@ -89,23 +90,19 @@ export function BellFieldBackground({
 
     let mouseX = window.innerWidth * 0.5;
     let mouseY = window.innerHeight * 0.5;
-    let startedAt = performance.now();
     let lastStrikeMs = -1e9;
 
-    // Schedule periodic strike
     const strikeTimer = window.setInterval(() => {
       lastStrikeMs = performance.now();
     }, 8000);
 
-    const draw: DrawFn = (gl: WebGLRenderingContext, t: number) => {
+    const draw: DrawFn = (gl: WebGLRenderingContext, t: number, _w: number, _h: number, dpr: number) => {
       gl.useProgram(program);
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.enableVertexAttribArray(positionLoc);
       gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      gl.uniform2f(resolutionLoc, w * dpr, h * dpr);
+      gl.uniform2f(resolutionLoc, window.innerWidth * dpr, window.innerHeight * dpr);
       gl.uniform1f(timeLoc, t * opts.speed);
       gl.uniform2f(mouseLoc, mouseX * dpr, mouseY * dpr);
       const strike = Math.min(1, Math.max(0, (performance.now() - lastStrikeMs) / opts.strikeDuration));

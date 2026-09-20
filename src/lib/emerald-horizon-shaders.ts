@@ -9,36 +9,55 @@ export const LUMINA_VERTEX_SHADER = `
 
 export const LUMINA_FRAGMENT_SHADER = `
                 precision highp float;
-                uniform float u_time;
+                varying vec2 vUv;
                 uniform vec2 u_resolution;
+                uniform float u_time;
                 uniform float u_wave_scale;
-                uniform float u_variation;
+                uniform float u_bg;
+                uniform float u_fg;
                 uniform float u_glow;
                 uniform float u_vignette;
-                varying vec2 vUv;
-                float hash(float n) { return fract(sin(n) * 1e4); }
-                float noise(float x) {
-                  float i = floor(x);
-                  float f = fract(x);
-                  float u = f * f * (3.0 - 2.0 * f);
-                  return mix(hash(i), hash(i + 1.0), u);
+
+                vec3 palette(float t) {
+                  vec3 a = vec3(0.5, 0.5, 0.5);
+                  vec3 b = vec3(0.5, 0.5, 0.5);
+                  vec3 c = vec3(1.0, 1.0, 1.0);
+                  vec3 d = vec3(0.00, 0.33, 0.67);
+                  return a + b * cos(6.28318 * (c * t + d));
                 }
+
+                vec3 palette2(float t) {
+                  vec3 a = vec3(0.5, 0.5, 0.5);
+                  vec3 b = vec3(0.5, 0.5, 0.5);
+                  vec3 c = vec3(1.0, 1.0, 1.0);
+                  vec3 d = vec3(0.0, 0.10, 0.20);
+                  return a + b * cos(6.28318 * (c * t + d));
+                }
+
                 void main() {
-                  vec2 st = gl_FragCoord.xy / u_resolution.xy;
-                  float yPos = st.y;
-                  float wave1 = sin(st.x * 3.0 + u_time * 0.5) * 0.1 * u_wave_scale;
-                  float wave2 = sin(st.x * 5.0 - u_time * 0.3) * 0.05 * u_wave_scale;
-                  float combinedWave = wave1 + wave2;
-                  float intensity = smoothstep(0.4, -0.1, yPos + combinedWave);
-                  float variation = noise(st.x * 2.0 + u_time * 0.1) * 0.5 + 0.5;
-                  intensity *= variation * 1.5 * u_variation;
-                  vec3 color = vec3(0.0, 0.02, 0.0);
-                  vec3 glowColor1 = vec3(0.05, 0.8, 0.2);
-                  vec3 glowColor2 = vec3(0.0, 1.0, 0.5);
-                  vec3 finalGlow = mix(glowColor1, glowColor2, st.x + sin(u_time*0.2)*0.5);
-                  color += finalGlow * pow(intensity, 1.5) * 1.2 * u_glow;
-                  float vignette = mix(1.0, smoothstep(1.2, 0.5, length(st - vec2(0.5, 0.0))), u_vignette);
-                  color *= vignette;
-                  gl_FragColor = vec4(color, 1.0);
+                  vec2 uv = vUv * 2.0 - 1.0;
+                  float scale = u_wave_scale;
+                  float variation = u_time * 0.1 + u_vignette;
+
+                  float wave1 = sin(uv.x * scale * 3.0 + u_time) * cos(uv.y * scale * 3.0 - u_time);
+                  float wave2 = sin(uv.y * scale * 4.0 + u_time * 0.8) * cos(uv.x * scale * 4.0 - u_time);
+                  float waveSum = wave1 + wave2 + variation;
+                  float intensity = (waveSum * 0.5 + 0.5) * u_glow;
+
+                  vec3 col = palette(intensity + variation);
+                  col += palette2(intensity) * 0.4;
+                  col *= (1.8 - 4.0 * length(uv)) * u_vignette;
+                  col = mix(vec3(0.02, 0.02, 0.02), col, intensity);
+
+                  float v = smoothstep(0.85, u_vignette, length(vUv - 0.5) * 1.8);
+                  col = mix(vec3(0.02, 0.02, 0.02), col, v * 0.8);
+
+                  col = abs(col - vec3(0.5)) * 2.5;
+                  col = sqrt(col);
+
+                  float pv = (0.5 - abs(uv.x)) * (0.5 - abs(uv.y));
+                  col += col * pv * 0.05;
+
+                  gl_FragColor = vec4(col, 1.0);
                 }
               `;

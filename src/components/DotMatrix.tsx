@@ -26,8 +26,10 @@ export function DotMatrix({ className = "", ...props }: DotMatrixProps) {
 
   useEffect(() => {
     if (!webgl.hasContext) return;
+
     const opts = optionsRef.current;
-    const gl = webgl.getContext!;
+    const gl = webgl.gl;
+    if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
@@ -87,12 +89,12 @@ export function DotMatrix({ className = "", ...props }: DotMatrixProps) {
     let targetY = 0;
 
     const handlePointer = (e: PointerEvent) => {
-      const bounds = (webgl.canvas?.parentElement ?? document.body).getBoundingClientRect();
+      const bounds = document.body.getBoundingClientRect();
       targetX = ((e.clientX - bounds.left) / Math.max(1, bounds.width)) * 2 - 1;
       targetY = -((e.clientY - bounds.top) / Math.max(1, bounds.height)) * 2 + 1;
     };
 
-    const draw: DrawFn = (gl: WebGLRenderingContext, t: number) => {
+    const draw: DrawFn = (gl: WebGLRenderingContext, t: number, _w: number, _h: number, dpr: number) => {
       mouseX += (targetX - mouseX) * 0.05;
       mouseY += (targetY - mouseY) * 0.05;
 
@@ -101,10 +103,8 @@ export function DotMatrix({ className = "", ...props }: DotMatrixProps) {
       gl.enableVertexAttribArray(positionLoc);
       gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
-      const w = window.innerWidth;
-      const h = window.innerHeight;
       gl.uniform1f(timeLoc, t * opts.speed);
-      gl.uniform2f(resolutionLoc, w * dpr, h * dpr);
+      gl.uniform2f(resolutionLoc, window.innerWidth * dpr, window.innerHeight * dpr);
       gl.uniform2f(mouseLoc, mouseX, mouseY);
       gl.uniform1f(gridScaleLoc, opts.gridScale);
       gl.uniform1f(mouseAmountLoc, opts.mouseAmount);
@@ -117,12 +117,10 @@ export function DotMatrix({ className = "", ...props }: DotMatrixProps) {
     const id = webgl.register("dot-matrix", draw);
     idRef.current = id;
 
-    // Pointer listener on the shared canvas
-    const canvas = webgl.canvas;
-    canvas?.addEventListener("pointermove", handlePointer);
+    document.addEventListener("pointermove", handlePointer);
 
     destroyRef.current = () => {
-      canvas?.removeEventListener("pointermove", handlePointer);
+      document.removeEventListener("pointermove", handlePointer);
       if (programRef.current) {
         gl.deleteProgram(programRef.current);
         gl.deleteBuffer(buffer);
@@ -145,7 +143,6 @@ export function DotMatrix({ className = "", ...props }: DotMatrixProps) {
         position: "fixed",
         inset: 0,
         opacity: optionsRef.current.opacity,
-        filter: `hue-rotate(${optionsRef.current.hue}deg)`,
         pointerEvents: "none",
         zIndex: 0,
       }}

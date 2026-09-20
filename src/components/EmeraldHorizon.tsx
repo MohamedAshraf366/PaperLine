@@ -26,8 +26,10 @@ export function EmeraldHorizon({ className = "", ...props }: EmeraldHorizonProps
 
   useEffect(() => {
     if (!webgl.hasContext) return;
+
     const opts = optionsRef.current;
-    const gl = webgl.getContext!;
+    const gl = webgl.gl;
+    if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
@@ -79,15 +81,13 @@ export function EmeraldHorizon({ className = "", ...props }: EmeraldHorizonProps
       new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1]),
       gl.STATIC_DRAW);
 
-    const draw: DrawFn = (gl: WebGLRenderingContext, t: number) => {
+    const draw: DrawFn = (gl: WebGLRenderingContext, t: number, _w: number, _h: number, dpr: number) => {
       gl.useProgram(program);
       gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
       gl.enableVertexAttribArray(positionLoc);
       gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      gl.uniform2f(resolutionLoc, w * dpr, h * dpr);
+      gl.uniform2f(resolutionLoc, window.innerWidth * dpr, window.innerHeight * dpr);
       gl.uniform1f(timeLoc, t * opts.speed);
       gl.uniform1f(waveScaleLoc, opts.waveScale);
       gl.uniform1f(variationLoc, opts.variation);
@@ -122,7 +122,6 @@ export function EmeraldHorizon({ className = "", ...props }: EmeraldHorizonProps
         position: "fixed",
         inset: 0,
         opacity: optionsRef.current.opacity,
-        filter: `hue-rotate(${optionsRef.current.hue}deg)`,
         pointerEvents: "none",
         zIndex: 0,
       }}
