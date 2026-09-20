@@ -22,9 +22,6 @@ export function WebGLHost() {
     return () => ro.disconnect();
   }, []);
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  if (typeof window === "undefined") return null;
-
   return (
     <div
       ref={rootRef}

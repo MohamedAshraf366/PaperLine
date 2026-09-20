@@ -70,18 +70,18 @@ export const ENERGY_ORB_CONFIGURABLE_FRAGMENT_SHADER = `
                 uniform float u_sat;
                 uniform float u_brightness;
                 uniform float u_opacity;
+                uniform float u_scale;
 
                 void main() {
                   vec2 uv = vUv * 2.0 - 1.0;
                   float t = u_time * 0.03;
 
-                  vec2 p = uv;
+                  vec2 p = uv / max(u_scale, 0.001);
                   float d = length(p);
                   float f = 7.0;
-                  float spikes = abs(sin(vec2(
-                    atan(p.y, p.x) * f + t,
-                    log(length(p) + 1.0) * 0.3
-                  )));
+                  float spikes = abs(
+                    sin(atan(p.y, p.x) * f + t) * sin(log(length(p) + 1.0) * 0.3)
+                  );
                   float orb = smoothstep(0.35, 0.25, d) * (0.5 + 0.5 * cos(t * 0.5));
                   float spikePattern = pow(0.5 + 0.5 * spikes, 8.0 + 4.0 * sin(t * 0.3) + 4.0 * cos(t * 0.21));
                   spikePattern *= smoothstep(1.0, 0.0, d);
@@ -134,14 +134,14 @@ export const CORE_UPLINK_VERTEX_SHADER = `
 export const CORE_UPLINK_FRAGMENT_SHADER = `
                 precision highp float;
                 varying vec2 vUv;
-                uniform vec2 u_resolution;
-                uniform float u_time;
-                uniform float u_gridScale;
-                uniform vec2 u_mouse;
-                uniform float u_mouseAmount;
-                uniform float u_pulseSpeed;
-                uniform float u_radius;
-                uniform float u_opacity;
+                uniform vec2 uResolution;
+                uniform float uTime;
+                uniform float uGridScale;
+                uniform vec2 uMouse;
+                uniform float uMouseAmount;
+                uniform float uPulseSpeed;
+                uniform float uRadius;
+                uniform float uOpacity;
                 uniform float u_hue;
                 uniform float u_bg;
                 uniform float u_fg;
@@ -157,14 +157,14 @@ export const CORE_UPLINK_FRAGMENT_SHADER = `
 
                 void main() {
                   vec2 uv = vUv;
-                  vec2 res = u_resolution;
-                  float scl = u_gridScale;
-                  vec2 mouse = u_mouse;
-                  float mouseAmount = u_mouseAmount;
-                  float time = u_time;
-                  float pulseSpeed = u_pulseSpeed;
-                  float radius = u_radius;
-                  float op = u_opacity;
+                  vec2 res = uResolution;
+                  float scl = uGridScale;
+                  vec2 mouse = uMouse;
+                  float mouseAmount = uMouseAmount;
+                  float time = uTime;
+                  float pulseSpeed = uPulseSpeed;
+                  float radius = uRadius;
+                  float op = uOpacity;
                   float hue = u_hue;
                   float bg = u_bg;
                   float fg = u_fg;
@@ -199,7 +199,7 @@ export const CORE_UPLINK_FRAGMENT_SHADER = `
 
                   float dist_col = length(uv - mouse) * 2.0;
                   float falloff_col = exp(-dist_col * 1.5);
-                  vec3 accent = h2r(vec3(0.0, 0.33, 0.67) + vec3(0.0, 0.1, 0.2) * (1.0 - falloff_col));
+                  vec3 accent = h2r(0.33 + 0.15 * (1.0 - falloff_col));
                   col += accent * falloff_col * 0.15 * (0.5 + 0.5 * sin(time * 0.5));
 
                   col += vec3(1.0) * glow * 0.2 * op;

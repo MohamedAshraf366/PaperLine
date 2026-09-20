@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 import { webgl, type DrawFn } from "@/lib/webgl-manager";
-import { EMERALD_HORIZON_VERTEX_SHADER, EMERALD_HORIZON_FRAGMENT_SHADER } from "@/lib/shaders";
+import { GEMINI_VERTEX_SHADER, GEMINI_FRAGMENT_SHADER } from "@/lib/shaders";
 
 export type EmeraldHorizonProps = {
   speed?: number;
@@ -33,7 +33,7 @@ export function EmeraldHorizon({ className = "", ...props }: EmeraldHorizonProps
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
     const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
-    gl.shaderSource(vertexShader, LUMINA_VERTEX_SHADER);
+    gl.shaderSource(vertexShader, GEMINI_VERTEX_SHADER);
     gl.compileShader(vertexShader);
     if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
       console.error("EmeraldHorizon vertex compile error:", gl.getShaderInfoLog(vertexShader));
@@ -42,7 +42,7 @@ export function EmeraldHorizon({ className = "", ...props }: EmeraldHorizonProps
     }
 
     const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)!;
-    gl.shaderSource(fragmentShader, LUMINA_FRAGMENT_SHADER);
+    gl.shaderSource(fragmentShader, GEMINI_FRAGMENT_SHADER);
     gl.compileShader(fragmentShader);
     if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
       console.error("EmeraldHorizon fragment compile error:", gl.getShaderInfoLog(fragmentShader));
