@@ -14,6 +14,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { ThemeProvider } from "@/components/ThemeProvider";
 import { I18nProvider, useI18n } from "@/i18n";
+import { WebGLHost } from "@/components/WebGLHost";
 
 const THEME_AND_LOCALE_INIT = `(function(){try{var d=document.documentElement;var t=localStorage.getItem('paperline.theme');var dark=t==='dark'||((!t||t==='system')&&window.matchMedia('(prefers-color-scheme: dark)').matches);d.classList.toggle('dark',dark);d.style.colorScheme=dark?'dark':'light';var l=localStorage.getItem('paperline.locale')==='ar'?'ar':'en';d.lang=l;d.dir=l==='ar'?'rtl':'ltr';}catch(e){}})();`;
 
@@ -119,6 +120,7 @@ function RootShell({ children }: { children: ReactNode }) {
       </head>
       <body>
         <ThemeProvider>
+          <WebGLHost />
           <I18nProvider>{children}</I18nProvider>
         </ThemeProvider>
         <Scripts />

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
-import { NXA_ENERGY_ORB_VERTEX_SHADER, NXA_ENERGY_ORB_CONFIGURABLE_FRAGMENT_SHADER } from "@/lib/energy-orb-shaders";
+import { webgl } from "@/lib/webgl-manager";
+import { ENERGY_ORB_VERTEX_SHADER, ENERGY_ORB_CONFIGURABLE_FRAGMENT_SHADER } from "@/lib/energy-orb-shaders";
 
 export type EnergyOrbProps = {
   speed?: number;
@@ -7,179 +8,133 @@ export type EnergyOrbProps = {
   hue?: number;
   saturation?: number;
   glow?: number;
-  starDensity?: number;
   opacity?: number;
   className?: string;
 };
 
 export const ENERGY_ORB_DEFAULTS = {
-  speed: 1,
-  scale: 1,
-  hue: 0,
-  saturation: 1,
-  glow: 1,
-  starDensity: 1,
-  opacity: 1,
+  speed: 1, scale: 1, hue: 0, saturation: 1, glow: 1, opacity: 1,
 } as const;
 
-function compile(
-  gl: WebGLRenderingContext,
-  type: number,
-  source: string,
-): WebGLShader {
-  const shader = gl.createShader(type);
-  if (!shader) throw new Error("Unable to create Energy Orb shader");
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    throw new Error(
-      gl.getShaderInfoLog(shader) ?? "Energy Orb shader compilation failed",
-    );
-  }
-  return shader;
-}
-
-export function EnergyOrb({
-  className = "",
-  ...props
-}: EnergyOrbProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+export function EnergyOrb({ className = "", ...props }: EnergyOrbProps) {
   const optionsRef = useRef({ ...ENERGY_ORB_DEFAULTS, ...props });
   optionsRef.current = { ...ENERGY_ORB_DEFAULTS, ...props };
+  const idRef = useRef<string | null>(null);
+  const programRef = useRef<WebGLProgram | null>(null);
+  const destroyRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const host = hostRef.current;
-    const canvas = canvasRef.current;
-    if (!host || !canvas) return undefined;
+    if (!webgl.hasContext) return;
+    const opts = optionsRef.current;
+    const gl = webgl.getContext!;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-    const gl = canvas.getContext("webgl", {
-      alpha: true,
-    });
-    if (!gl) return undefined;
-
-    const vertex = compile(gl, gl.VERTEX_SHADER, NXA_ENERGY_ORB_VERTEX_SHADER);
-    const fragment = compile(
-      gl,
-      gl.FRAGMENT_SHADER,
-      NXA_ENERGY_ORB_CONFIGURABLE_FRAGMENT_SHADER,
-    );
-    const program = gl.createProgram();
-    if (!program) {
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
-      return undefined;
+    const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
+    gl.shaderSource(vertexShader, ENERGY_ORB_VERTEX_SHADER);
+    gl.compileShader(vertexShader);
+    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+      console.error("EnergyOrb vertex compile error:", gl.getShaderInfoLog(vertexShader));
+      gl.deleteShader(vertexShader);
+      return;
     }
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
+
+    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)!;
+    gl.shaderSource(fragmentShader, ENERGY_ORB_CONFIGURABLE_FRAGMENT_SHADER);
+    gl.compileShader(fragmentShader);
+    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+      console.error("EnergyOrb fragment compile error:", gl.getShaderInfoLog(fragmentShader));
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      return;
+    }
+
+    const program = gl.createProgram()!;
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
+      console.error("EnergyOrb program link error:", gl.getProgramInfoLog(program));
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
       gl.deleteProgram(program);
-      return undefined;
+      return;
     }
-    gl.useProgram(program);
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
 
-    const buffer = gl.createBuffer();
+    programRef.current = program;
+
+    const timeLoc = gl.getUniformLocation(program, "u_time")!;
+    const resolutionLoc = gl.getUniformLocation(program, "u_resolution")!;
+    const hueLoc = gl.getUniformLocation(program, "u_hue")!;
+    const saturationLoc = gl.getUniformLocation(program, "u_sat")!;
+    const brightnessLoc = gl.getUniformLocation(program, "u_brightness")!;
+    const opacityLoc = gl.getUniformLocation(program, "u_opacity")!;
+    const scaleLoc = gl.getUniformLocation(program, "u_scale")!;
+    const positionLoc = gl.getAttribLocation(program, "position");
+
+    const buffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
+    gl.bufferData(gl.ARRAY_BUFFER,
       new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1]),
-      gl.STATIC_DRAW,
-    );
-    const position = gl.getAttribLocation(program, "p");
-    gl.enableVertexAttribArray(position);
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+      gl.STATIC_DRAW);
 
-    const uniforms = {
-      time: gl.getUniformLocation(program, "uT"),
-      resolution: gl.getUniformLocation(program, "uR"),
-      hue: gl.getUniformLocation(program, "uHue"),
-      saturation: gl.getUniformLocation(program, "uSaturation"),
-      glow: gl.getUniformLocation(program, "uGlow"),
-    };
+    let hue = opts.hue;
+    let saturation = opts.saturation;
+    let brightness = 1;
+    let opacity = opts.opacity;
+    let scale = opts.scale;
 
-    let width = 1;
-    let height = 1;
-    let frame = 0;
-    let visible = true;
-    let start = performance.now();
+    const draw: DrawFn = (gl: WebGLRenderingContext, t: number) => {
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.enableVertexAttribArray(positionLoc);
+      gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
-    const resize = () => {
-      const bounds = host.getBoundingClientRect();
-      width = Math.max(1, Math.round(bounds.width));
-      height = Math.max(1, Math.round(bounds.height));
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.max(1, Math.round(width * dpr));
-      canvas.height = Math.max(1, Math.round(height * dpr));
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
-    };
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      gl.uniform2f(resolutionLoc, w * dpr, h * dpr);
+      gl.uniform1f(timeLoc, t * opts.speed);
+      gl.uniform1f(hueLoc, hue * Math.PI / 180);
+      gl.uniform1f(saturationLoc, saturation);
+      gl.uniform1f(brightnessLoc, brightness);
+      gl.uniform1f(opacityLoc, opacity);
+      gl.uniform1f(scaleLoc, scale);
 
-    const resizeObserver = new ResizeObserver(resize);
-    const intersection = new IntersectionObserver(
-      ([entry]) => {
-        visible = entry?.isIntersecting ?? true;
-        if (visible && !frame) frame = requestAnimationFrame(render);
-        if (!visible && frame)
-          cancelAnimationFrame(frame), (frame = 0);
-      },
-    );
-    resizeObserver.observe(host);
-    intersection.observe(host);
-    resize();
-    resizeObserver.disconnect();
-    frame = requestAnimationFrame(render);
-
-    const render = (now: number) => {
-      const options = optionsRef.current;
-      gl.uniform1f(uniforms.time, (now - start) * 0.001 * options.speed);
-      if (uniforms.hue) gl.uniform1f(uniforms.hue, options.hue * Math.PI / 180);
-      if (uniforms.saturation) gl.uniform1f(uniforms.saturation, options.saturation);
-      if (uniforms.glow) gl.uniform1f(uniforms.glow, options.glow);
-      gl.clear(gl.COLOR_BUFFER_BIT);
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      const bounds = host.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.round(bounds.width * dpr));
-      canvas.height = Math.max(1, Math.round(bounds.height * dpr));
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.uniform2f(uniforms.resolution, canvas.width, canvas.height);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
-      frame = visible && !document.hidden ? requestAnimationFrame(render) : 0;
+    };
+
+    const id = webgl.register("energy-orb", draw);
+    idRef.current = id;
+
+    destroyRef.current = () => {
+      if (programRef.current) {
+        gl.deleteProgram(programRef.current);
+        gl.deleteBuffer(buffer);
+        programRef.current = null;
+      }
     };
 
     return () => {
-      if (frame) cancelAnimationFrame(frame);
-      resizeObserver.disconnect();
-      intersection.disconnect();
-      gl.deleteBuffer(buffer);
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
-      gl.deleteProgram(program);
+      if (destroyRef.current) destroyRef.current();
+      if (idRef.current) webgl.unregister(idRef.current);
+      idRef.current = null;
+      destroyRef.current = null;
     };
   }, []);
 
-  const options = optionsRef.current;
   return (
     <div
-      ref={hostRef}
       className={`energy-orb${className ? ` ${className}` : ""}`}
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
-        opacity: options.opacity,
-        filter: `hue-rotate(${options.hue}deg) saturate(${options.saturation})`,
+        opacity: optionsRef.current.opacity,
+        filter: `hue-rotate(${optionsRef.current.hue}deg) saturate(${optionsRef.current.saturation})`,
+        pointerEvents: "none",
+        zIndex: 0,
       }}
-    >
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: "block",
-          width: "100%",
-          height: "100%",
-        }}
-      />
-    </div>
+      aria-hidden
+    />
   );
 }

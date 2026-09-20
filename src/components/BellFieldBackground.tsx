@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { webgl } from "@/lib/webgl-manager";
 import {
   BELL_FIELD_VERTEX_SHADER,
   BELL_FIELD_FRAGMENT_SHADER,
@@ -19,186 +20,130 @@ export const BELL_FIELD_DEFAULTS = {
   opacity: 1,
 } as const;
 
-function compile(
-  gl: WebGLRenderingContext,
-  type: number,
-  source: string,
-): WebGLShader {
-  const shader = gl.createShader(type);
-  if (!shader) throw new Error("Unable to create Bell Field shader");
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    throw new Error(
-      gl.getShaderInfoLog(shader) ?? "Bell Field shader compilation failed",
-    );
-  }
-  return shader;
-}
-
 export function BellFieldBackground({
   className = "",
   ...props
 }: BellFieldBackgroundProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const optionsRef = useRef({ ...BELL_FIELD_DEFAULTS, ...props });
   optionsRef.current = { ...BELL_FIELD_DEFAULTS, ...props };
+  const idRef = useRef<string | null>(null);
+  const programRef = useRef<WebGLProgram | null>(null);
+  const destroyRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const host = hostRef.current;
-    const canvas = canvasRef.current;
-    if (!host || !canvas) return undefined;
+    if (!webgl.hasContext) return;
 
-    const gl = canvas.getContext("webgl");
-    if (!gl) return undefined;
+    const opts = optionsRef.current;
+    const gl = webgl.getContext!;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-    const vertex = compile(gl, gl.VERTEX_SHADER, BELL_FIELD_VERTEX_SHADER);
-    const fragment = compile(
-      gl,
-      gl.FRAGMENT_SHADER,
-      BELL_FIELD_FRAGMENT_SHADER,
-    );
-    const program = gl.createProgram();
-    if (!program) return undefined;
-
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
-    gl.linkProgram(program);
-    if (
-      !gl.getProgramParameter(program, gl.LINK_STATUS)
-    ) {
-      throw new Error(
-        gl.getProgramInfoLog(program) ?? "Bell Field program link failed",
-      );
+    const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
+    gl.shaderSource(vertexShader, BELL_FIELD_VERTEX_SHADER);
+    gl.compileShader(vertexShader);
+    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(vertexShader);
+      console.error("BellField vertex shader compile error:", log);
+      gl.deleteShader(vertexShader);
+      return;
     }
-    gl.useProgram(program);
 
-    const buffer = gl.createBuffer();
+    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)!;
+    gl.shaderSource(fragmentShader, BELL_FIELD_FRAGMENT_SHADER);
+    gl.compileShader(fragmentShader);
+    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+      const log = gl.getShaderInfoLog(fragmentShader);
+      console.error("BellField fragment shader compile error:", log);
+      gl.deleteShader(fragmentShader);
+      gl.deleteShader(vertexShader);
+      return;
+    }
+
+    const program = gl.createProgram()!;
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
+    gl.linkProgram(program);
+    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+      const log = gl.getProgramInfoLog(program);
+      console.error("BellField program link error:", log);
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      gl.deleteProgram(program);
+      return;
+    }
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
+
+    programRef.current = program;
+
+    const resolutionLoc = gl.getUniformLocation(program, "u_resolution")!;
+    const timeLoc = gl.getUniformLocation(program, "u_time")!;
+    const mouseLoc = gl.getUniformLocation(program, "u_mouse")!;
+    const strikeLoc = gl.getUniformLocation(program, "u_strike")!;
+    const positionLoc = gl.getAttribLocation(program, "position");
+
+    const buffer = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
+    gl.bufferData(gl.ARRAY_BUFFER,
       new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1]),
-      gl.STATIC_DRAW,
-    );
-    const position = gl.getAttribLocation(program, "position");
-    gl.enableVertexAttribArray(position);
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+      gl.STATIC_DRAW);
 
-    const resolution = gl.getUniformLocation(program, "u_resolution");
-    const time = gl.getUniformLocation(program, "u_time");
-    const mouseUniform = gl.getUniformLocation(program, "u_mouse");
-    const strikeUniform = gl.getUniformLocation(program, "u_strike");
-
-    let width = 1;
-    let height = 1;
-    let dpr = 1;
-    let mouseX = 0.5;
-    let mouseY = 0.5;
-    let targetX = 0.5;
-    let targetY = 0.5;
-    let frame = 0;
-    let visible = true;
-    let initialized = false;
+    let mouseX = window.innerWidth * 0.5;
+    let mouseY = window.innerHeight * 0.5;
+    let startedAt = performance.now();
     let lastStrikeMs = -1e9;
-    const startedAt = performance.now();
 
-    const resize = () => {
-      const bounds = host.getBoundingClientRect();
-      width = Math.max(1, bounds.width);
-      height = Math.max(1, bounds.height);
-      dpr = Math.min(window.devicePixelRatio || 1, 2);
-      canvas.width = Math.max(1, Math.round(width * dpr));
-      canvas.height = Math.max(1, Math.round(height * dpr));
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.uniform2f(resolution, canvas.width, canvas.height);
-      if (!initialized) {
-        mouseX = targetX = width * 0.5;
-        mouseY = targetY = height * 0.5;
-        initialized = true;
+    // Schedule periodic strike
+    const strikeTimer = window.setInterval(() => {
+      lastStrikeMs = performance.now();
+    }, 8000);
+
+    const draw: DrawFn = (gl: WebGLRenderingContext, t: number) => {
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.enableVertexAttribArray(positionLoc);
+      gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      gl.uniform2f(resolutionLoc, w * dpr, h * dpr);
+      gl.uniform1f(timeLoc, t * opts.speed);
+      gl.uniform2f(mouseLoc, mouseX * dpr, mouseY * dpr);
+      const strike = Math.min(1, Math.max(0, (performance.now() - lastStrikeMs) / opts.strikeDuration));
+      gl.uniform1f(strikeLoc, strike);
+      gl.drawArrays(gl.TRIANGLES, 0, 6);
+    };
+
+    const id = webgl.register("bell-field", draw);
+    idRef.current = id;
+
+    destroyRef.current = () => {
+      window.clearInterval(strikeTimer);
+      if (programRef.current) {
+        gl.deleteProgram(programRef.current);
+        gl.deleteBuffer(buffer);
+        programRef.current = null;
       }
     };
 
-    const pointer = (event: PointerEvent) => {
-      const bounds = host.getBoundingClientRect();
-      const amount = optionsRef.current.pointerAmount;
-      targetX =
-        width * 0.5 + (event.clientX - bounds.left - width * 0.5) * amount;
-      targetY =
-        height * 0.5 + (event.clientY - bounds.top - height * 0.5) * amount;
-    };
-
-    const strike = () => {
-      lastStrikeMs = performance.now();
-    };
-
-    const firstStrike = window.setTimeout(strike, 1700);
-    const strikeTimer = window.setInterval(strike, 8200);
-
-    const render = (now: number) => {
-      const options = optionsRef.current;
-      mouseX += (targetX - mouseX) * 0.04;
-      mouseY += (targetY - mouseY) * 0.04;
-      gl.uniform1f(
-        time,
-        (now - startedAt) * 0.001 * options.speed,
-      );
-      gl.uniform1f(
-        strikeUniform,
-        Math.min(
-          1,
-          Math.max(0, (now - lastStrikeMs) / options.strikeDuration),
-        ),
-      );
-      gl.uniform2f(mouseUniform, mouseX * dpr, mouseY * dpr);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-
-      frame = visible && !document.hidden ? requestAnimationFrame(render) : 0;
-    };
-
-    const resizeObserver = new ResizeObserver(resize);
-    const intersection = new IntersectionObserver(
-      ([entry]) => {
-        visible = entry?.isIntersecting ?? true;
-        if (visible && !frame) frame = requestAnimationFrame(render);
-        if (!visible && frame)
-          cancelAnimationFrame(frame), (frame = 0);
-      },
-    );
-    resizeObserver.observe(host);
-    intersection.observe(host);
-    host.addEventListener("pointermove", pointer, { passive: true });
-    host.addEventListener("pointerdown", strike);
-    resize();
-    frame = requestAnimationFrame(render);
-
     return () => {
-      if (frame) cancelAnimationFrame(frame);
-      window.clearTimeout(firstStrike);
-      window.clearInterval(strikeTimer);
-      resizeObserver.disconnect();
-      intersection.disconnect();
-      host.removeEventListener("pointermove", pointer);
-      host.removeEventListener("pointerdown", strike);
-      gl.deleteBuffer(buffer);
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
-      gl.deleteProgram(program);
+      if (destroyRef.current) destroyRef.current();
+      if (idRef.current) webgl.unregister(idRef.current);
+      idRef.current = null;
+      destroyRef.current = null;
     };
   }, []);
 
-  const options = optionsRef.current;
   return (
     <div
-      ref={hostRef}
       className={`bell-field${className ? ` ${className}` : ""}`}
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
-        opacity: options.opacity,
+        opacity: optionsRef.current.opacity,
+        pointerEvents: "none",
+        zIndex: 0,
       }}
-    >
-      <canvas ref={canvasRef} style={{ display: "block", width: "100%", height: "100%" }} />
-    </div>
+      aria-hidden
+    />
   );
 }

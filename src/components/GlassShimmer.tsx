@@ -1,8 +1,6 @@
 import { useEffect, useRef } from "react";
-import {
-  GLASS_SHIMMER_VERTEX_SHADER,
-  GLASS_SHIMMER_FRAGMENT_SHADER,
-} from "@/lib/glass-shimmer-shaders";
+import { webgl } from "@/lib/webgl-manager";
+import { GLASS_SHIMMER_VERTEX_SHADER, GLASS_SHIMMER_FRAGMENT_SHADER } from "@/lib/glass-shimmer-shaders";
 
 export type GlassShimmerProps = {
   speed?: number;
@@ -11,155 +9,110 @@ export type GlassShimmerProps = {
 };
 
 export const GLASS_SHIMMER_DEFAULTS = {
-  speed: 1,
-  opacity: 0.15,
+  speed: 1, opacity: 0.15,
 } as const;
 
-function compile(
-  gl: WebGLRenderingContext,
-  type: number,
-  source: string,
-): WebGLShader {
-  const shader = gl.createShader(type);
-  if (!shader) throw new Error("Unable to create Glass Shimmer shader");
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    throw new Error(
-      gl.getShaderInfoLog(shader) ?? "Glass Shimmer shader compilation failed",
-    );
-  }
-  return shader;
-}
-
-export function GlassShimmer({
-  className = "",
-  ...props
-}: GlassShimmerProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+export function GlassShimmer({ className = "", ...props }: GlassShimmerProps) {
   const optionsRef = useRef({ ...GLASS_SHIMMER_DEFAULTS, ...props });
   optionsRef.current = { ...GLASS_SHIMMER_DEFAULTS, ...props };
+  const idRef = useRef<string | null>(null);
+  const programRef = useRef<WebGLProgram | null>(null);
+  const destroyRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const host = hostRef.current;
-    const canvas = canvasRef.current;
-    if (!host || !canvas) return undefined;
+    if (!webgl.hasContext) return;
+    const opts = optionsRef.current;
+    const gl = webgl.getContext!;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-    const gl = canvas.getContext("webgl", {
-      alpha: true,
-      antialias: true,
-    });
-    if (!gl) return undefined;
-
-    const vertex = compile(gl, gl.VERTEX_SHADER, GLASS_SHIMMER_VERTEX_SHADER);
-    const fragment = compile(
-      gl,
-      gl.FRAGMENT_SHADER,
-      GLASS_SHIMMER_FRAGMENT_SHADER,
-    );
-    const program = gl.createProgram();
-    if (!program) {
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
-      return undefined;
+    const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
+    gl.shaderSource(vertexShader, GLASS_SHIMMER_VERTEX_SHADER);
+    gl.compileShader(vertexShader);
+    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+      console.error("GlassShimmer vertex compile error:", gl.getShaderInfoLog(vertexShader));
+      gl.deleteShader(vertexShader);
+      return;
     }
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
+
+    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)!;
+    gl.shaderSource(fragmentShader, GLASS_SHIMMER_FRAGMENT_SHADER);
+    gl.compileShader(fragmentShader);
+    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+      console.error("GlassShimmer fragment compile error:", gl.getShaderInfoLog(fragmentShader));
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      return;
+    }
+
+    const program = gl.createProgram()!;
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
+      console.error("GlassShimmer program link error:", gl.getProgramInfoLog(program));
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
       gl.deleteProgram(program);
-      return undefined;
+      return;
     }
-    gl.useProgram(program);
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
 
-    const geometry = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, geometry);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
+    programRef.current = program;
+
+    const timeLoc = gl.getUniformLocation(program, "u_time")!;
+    const resolutionLoc = gl.getUniformLocation(program, "u_resolution")!;
+    const positionLoc = gl.getAttribLocation(program, "position");
+
+    const buffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER,
       new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1]),
-      gl.STATIC_DRAW,
-    );
-    const position = gl.getAttribLocation(program, "position");
-    gl.enableVertexAttribArray(position);
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+      gl.STATIC_DRAW);
 
-    const uniforms = {
-      u_time: gl.getUniformLocation(program, "u_time"),
-      u_resolution: gl.getUniformLocation(program, "u_resolution"),
-    };
-    let width = 1;
-    let height = 1;
-    let frame = 0;
-    let visible = true;
-    let start = performance.now();
+    const draw: DrawFn = (gl: WebGLRenderingContext, t: number) => {
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.enableVertexAttribArray(positionLoc);
+      gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
 
-    const resize = () => {
-      const bounds = host.getBoundingClientRect();
-      width = Math.max(1, Math.round(bounds.width));
-      height = Math.max(1, Math.round(bounds.height));
-      canvas.width = width;
-      canvas.height = height;
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.uniform2f(uniforms.u_resolution, canvas.width, canvas.height);
-    };
-
-    const resizeObserver = new ResizeObserver(resize);
-    const intersection = new IntersectionObserver(
-      ([entry]) => {
-        visible = entry?.isIntersecting ?? true;
-        if (visible && !frame) frame = requestAnimationFrame(render);
-        if (!visible && frame)
-          cancelAnimationFrame(frame), (frame = 0);
-      },
-    );
-    resizeObserver.observe(host);
-    intersection.observe(host);
-    resize();
-    resizeObserver.disconnect();
-    frame = requestAnimationFrame(render);
-
-    const render = (now: number) => {
-      const options = optionsRef.current;
-      gl.uniform1f(uniforms.u_time, (now - start) * 0.001 * options.speed);
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      gl.uniform2f(resolutionLoc, w * dpr, h * dpr);
+      gl.uniform1f(timeLoc, t * opts.speed);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
-      frame =
-        visible && !document.hidden ? requestAnimationFrame(render) : 0;
+    };
+
+    const id = webgl.register("glass-shimmer", draw);
+    idRef.current = id;
+
+    destroyRef.current = () => {
+      if (programRef.current) {
+        gl.deleteProgram(programRef.current);
+        gl.deleteBuffer(buffer);
+        programRef.current = null;
+      }
     };
 
     return () => {
-      if (frame) cancelAnimationFrame(frame);
-      resizeObserver.disconnect();
-      intersection.disconnect();
-      gl.deleteBuffer(geometry);
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
-      gl.deleteProgram(program);
+      if (destroyRef.current) destroyRef.current();
+      if (idRef.current) webgl.unregister(idRef.current);
+      idRef.current = null;
+      destroyRef.current = null;
     };
   }, []);
 
-  const options = optionsRef.current;
   return (
     <div
-      ref={hostRef}
       className={`glass-shimmer${className ? ` ${className}` : ""}`}
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
-        opacity: options.opacity,
+        opacity: optionsRef.current.opacity,
         pointerEvents: "none",
+        zIndex: 0,
       }}
-    >
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: "block",
-          width: "100%",
-          height: "100%",
-        }}
-      />
-    </div>
+      aria-hidden
+    />
   );
 }

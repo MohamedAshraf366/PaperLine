@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { webgl } from "@/lib/webgl-manager";
 import { CORE_UPLINK_VERTEX_SHADER, CORE_UPLINK_FRAGMENT_SHADER } from "@/lib/dot-matrix-shaders";
 
 export type DotMatrixProps = {
@@ -13,184 +14,142 @@ export type DotMatrixProps = {
 };
 
 export const DOT_MATRIX_DEFAULTS = {
-  speed: 1,
-  gridScale: 60,
-  mouseAmount: 0.04,
-  pulseSpeed: 0.4,
-  radius: 0.15,
-  opacity: 0.35,
-  hue: 0,
+  speed: 1, gridScale: 60, mouseAmount: 0.04, pulseSpeed: 0.4, radius: 0.15, opacity: 0.35, hue: 0,
 } as const;
 
-function compile(
-  gl: WebGLRenderingContext,
-  type: number,
-  source: string,
-): WebGLShader {
-  const shader = gl.createShader(type);
-  if (!shader) throw new Error("Unable to create Dot Matrix shader");
-  gl.shaderSource(shader, source);
-  gl.compileShader(shader);
-  if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-    throw new Error(
-      gl.getShaderInfoLog(shader) ?? "Dot Matrix shader compilation failed",
-    );
-  }
-  return shader;
-}
-
-export function DotMatrix({
-  className = "",
-  ...props
-}: DotMatrixProps) {
-  const hostRef = useRef<HTMLDivElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
+export function DotMatrix({ className = "", ...props }: DotMatrixProps) {
   const optionsRef = useRef({ ...DOT_MATRIX_DEFAULTS, ...props });
   optionsRef.current = { ...DOT_MATRIX_DEFAULTS, ...props };
+  const idRef = useRef<string | null>(null);
+  const programRef = useRef<WebGLProgram | null>(null);
+  const destroyRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
-    const host = hostRef.current;
-    const canvas = canvasRef.current;
-    if (!host || !canvas) return undefined;
+    if (!webgl.hasContext) return;
+    const opts = optionsRef.current;
+    const gl = webgl.getContext!;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
-    const gl = canvas.getContext("webgl", {
-      alpha: true,
-      antialias: true,
-    });
-    if (!gl) return undefined;
-
-    const vertex = compile(gl, gl.VERTEX_SHADER, CORE_UPLINK_VERTEX_SHADER);
-    const fragment = compile(gl, gl.FRAGMENT_SHADER, CORE_UPLINK_FRAGMENT_SHADER);
-    const program = gl.createProgram();
-    if (!program) {
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
-      return undefined;
+    const vertexShader = gl.createShader(gl.VERTEX_SHADER)!;
+    gl.shaderSource(vertexShader, CORE_UPLINK_VERTEX_SHADER);
+    gl.compileShader(vertexShader);
+    if (!gl.getShaderParameter(vertexShader, gl.COMPILE_STATUS)) {
+      console.error("DotMatrix vertex compile error:", gl.getShaderInfoLog(vertexShader));
+      gl.deleteShader(vertexShader);
+      return;
     }
-    gl.attachShader(program, vertex);
-    gl.attachShader(program, fragment);
+
+    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER)!;
+    gl.shaderSource(fragmentShader, CORE_UPLINK_FRAGMENT_SHADER);
+    gl.compileShader(fragmentShader);
+    if (!gl.getShaderParameter(fragmentShader, gl.COMPILE_STATUS)) {
+      console.error("DotMatrix fragment compile error:", gl.getShaderInfoLog(fragmentShader));
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
+      return;
+    }
+
+    const program = gl.createProgram()!;
+    gl.attachShader(program, vertexShader);
+    gl.attachShader(program, fragmentShader);
     gl.linkProgram(program);
     if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
+      console.error("DotMatrix program link error:", gl.getProgramInfoLog(program));
+      gl.deleteShader(vertexShader);
+      gl.deleteShader(fragmentShader);
       gl.deleteProgram(program);
-      return undefined;
+      return;
     }
-    gl.useProgram(program);
+    gl.deleteShader(vertexShader);
+    gl.deleteShader(fragmentShader);
 
-    const geometry = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, geometry);
-    gl.bufferData(
-      gl.ARRAY_BUFFER,
+    programRef.current = program;
+
+    const timeLoc = gl.getUniformLocation(program, "uTime")!;
+    const resolutionLoc = gl.getUniformLocation(program, "uResolution")!;
+    const mouseLoc = gl.getUniformLocation(program, "uMouse")!;
+    const gridScaleLoc = gl.getUniformLocation(program, "uGridScale")!;
+    const mouseAmountLoc = gl.getUniformLocation(program, "uMouseAmount")!;
+    const pulseSpeedLoc = gl.getUniformLocation(program, "uPulseSpeed")!;
+    const radiusLoc = gl.getUniformLocation(program, "uRadius")!;
+    const opacityLoc = gl.getUniformLocation(program, "uOpacity")!;
+    const positionLoc = gl.getAttribLocation(program, "position");
+
+    const buffer = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+    gl.bufferData(gl.ARRAY_BUFFER,
       new Float32Array([-1, -1, 1, -1, -1, 1, 1, -1, 1, 1, -1, 1]),
-      gl.STATIC_DRAW,
-    );
-    const position = gl.getAttribLocation(program, "position");
-    gl.enableVertexAttribArray(position);
-    gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+      gl.STATIC_DRAW);
 
-    const uniforms = {
-      uTime: gl.getUniformLocation(program, "uTime"),
-      uResolution: gl.getUniformLocation(program, "uResolution"),
-      uMouse: gl.getUniformLocation(program, "uMouse"),
-      uGridScale: gl.getUniformLocation(program, "uGridScale"),
-      uMouseAmount: gl.getUniformLocation(program, "uMouseAmount"),
-      uPulseSpeed: gl.getUniformLocation(program, "uPulseSpeed"),
-      uRadius: gl.getUniformLocation(program, "uRadius"),
-      uOpacity: gl.getUniformLocation(program, "uOpacity"),
-    };
-    let width = 1;
-    let height = 1;
     let mouseX = 0;
     let mouseY = 0;
     let targetX = 0;
     let targetY = 0;
-    let frame = 0;
-    let visible = true;
-    let start = performance.now();
 
-    const resize = () => {
-      const bounds = host.getBoundingClientRect();
-      width = Math.max(1, Math.round(bounds.width));
-      height = Math.max(1, Math.round(bounds.height));
-      canvas.width = width;
-      canvas.height = height;
-      gl.viewport(0, 0, canvas.width, canvas.height);
-      gl.uniform2f(uniforms.uResolution, canvas.width, canvas.height);
+    const handlePointer = (e: PointerEvent) => {
+      const bounds = (webgl.canvas?.parentElement ?? document.body).getBoundingClientRect();
+      targetX = ((e.clientX - bounds.left) / Math.max(1, bounds.width)) * 2 - 1;
+      targetY = -((e.clientY - bounds.top) / Math.max(1, bounds.height)) * 2 + 1;
     };
 
-    const pointer = (event: PointerEvent) => {
-      const bounds = host.getBoundingClientRect();
-      targetX =
-        ((event.clientX - bounds.left) / Math.max(1, bounds.width)) * 2 - 1;
-      targetY = -(
-        (event.clientY - bounds.top) / Math.max(1, bounds.height)
-      ) * 2 + 1;
-    };
-
-    const resizeObserver = new ResizeObserver(resize);
-    const intersection = new IntersectionObserver(
-      ([entry]) => {
-        visible = entry?.isIntersecting ?? true;
-        if (visible && !frame) frame = requestAnimationFrame(render);
-        if (!visible && frame)
-          cancelAnimationFrame(frame), (frame = 0);
-      },
-    );
-    resizeObserver.observe(host);
-    intersection.observe(host);
-    host.addEventListener("pointermove", pointer, { passive: true });
-    resize();
-    resizeObserver.disconnect();
-    frame = requestAnimationFrame(render);
-
-    const render = (now: number) => {
-      const options = optionsRef.current;
+    const draw: DrawFn = (gl: WebGLRenderingContext, t: number) => {
       mouseX += (targetX - mouseX) * 0.05;
       mouseY += (targetY - mouseY) * 0.05;
-      gl.uniform1f(uniforms.uTime, (now - start) * 0.001 * options.speed);
-      gl.uniform2f(uniforms.uMouse, mouseX, mouseY);
-      gl.uniform1f(uniforms.uGridScale, options.gridScale);
-      gl.uniform1f(uniforms.uMouseAmount, options.mouseAmount);
-      gl.uniform1f(uniforms.uPulseSpeed, options.pulseSpeed);
-      gl.uniform1f(uniforms.uRadius, options.radius);
-      gl.uniform1f(uniforms.uOpacity, options.opacity);
+
+      gl.useProgram(program);
+      gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+      gl.enableVertexAttribArray(positionLoc);
+      gl.vertexAttribPointer(positionLoc, 2, gl.FLOAT, false, 0, 0);
+
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      gl.uniform1f(timeLoc, t * opts.speed);
+      gl.uniform2f(resolutionLoc, w * dpr, h * dpr);
+      gl.uniform2f(mouseLoc, mouseX, mouseY);
+      gl.uniform1f(gridScaleLoc, opts.gridScale);
+      gl.uniform1f(mouseAmountLoc, opts.mouseAmount);
+      gl.uniform1f(pulseSpeedLoc, opts.pulseSpeed);
+      gl.uniform1f(radiusLoc, opts.radius);
+      gl.uniform1f(opacityLoc, opts.opacity);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
-      frame = visible && !document.hidden ? requestAnimationFrame(render) : 0;
+    };
+
+    const id = webgl.register("dot-matrix", draw);
+    idRef.current = id;
+
+    // Pointer listener on the shared canvas
+    const canvas = webgl.canvas;
+    canvas?.addEventListener("pointermove", handlePointer);
+
+    destroyRef.current = () => {
+      canvas?.removeEventListener("pointermove", handlePointer);
+      if (programRef.current) {
+        gl.deleteProgram(programRef.current);
+        gl.deleteBuffer(buffer);
+        programRef.current = null;
+      }
     };
 
     return () => {
-      if (frame) cancelAnimationFrame(frame);
-      resizeObserver.disconnect();
-      intersection.disconnect();
-      host.removeEventListener("pointermove", pointer);
-      gl.deleteBuffer(geometry);
-      gl.deleteShader(vertex);
-      gl.deleteShader(fragment);
-      gl.deleteProgram(program);
+      if (destroyRef.current) destroyRef.current();
+      if (idRef.current) webgl.unregister(idRef.current);
+      idRef.current = null;
+      destroyRef.current = null;
     };
   }, []);
 
-  const options = optionsRef.current;
   return (
     <div
-      ref={hostRef}
       className={`dot-matrix${className ? ` ${className}` : ""}`}
       style={{
-        position: "absolute",
+        position: "fixed",
         inset: 0,
-        opacity: options.opacity,
-        filter: `hue-rotate(${options.hue}deg)`,
+        opacity: optionsRef.current.opacity,
+        filter: `hue-rotate(${optionsRef.current.hue}deg)`,
+        pointerEvents: "none",
+        zIndex: 0,
       }}
-    >
-      <canvas
-        ref={canvasRef}
-        style={{
-          display: "block",
-          width: "100%",
-          height: "100%",
-        }}
-      />
-    </div>
+      aria-hidden
+    />
   );
 }
