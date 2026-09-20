@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { webgl } from "@/lib/webgl-manager";
+import { webgl, type DrawFn } from "@/lib/webgl-manager";
 import { GLASS_SHIMMER_VERTEX_SHADER, GLASS_SHIMMER_FRAGMENT_SHADER } from "@/lib/glass-shimmer-shaders";
 
 export type GlassShimmerProps = {
@@ -23,7 +23,7 @@ export function GlassShimmer({ className = "", ...props }: GlassShimmerProps) {
     if (!webgl.hasContext) return;
 
     const opts = optionsRef.current;
-    const gl = webgl.gl;
+    const gl = webgl.getContext();
     if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 

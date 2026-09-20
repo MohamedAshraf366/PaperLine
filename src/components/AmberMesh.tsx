@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { webgl } from "@/lib/webgl-manager";
+import { webgl, type DrawFn } from "@/lib/webgl-manager";
 import { AMBER_MESH_VERTEX_SHADER, AMBER_MESH_FRAGMENT_SHADER } from "@/lib/amber-mesh-shaders";
 
 export type AmberMeshProps = {
@@ -23,7 +23,7 @@ export function AmberMesh({ className = "", ...props }: AmberMeshProps) {
     if (!webgl.hasContext) return;
 
     const opts = optionsRef.current;
-    const gl = webgl.gl;
+    const gl = webgl.getContext();
     if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 

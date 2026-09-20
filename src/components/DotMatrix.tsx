@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { webgl } from "@/lib/webgl-manager";
+import { webgl, type DrawFn } from "@/lib/webgl-manager";
 import { CORE_UPLINK_VERTEX_SHADER, CORE_UPLINK_FRAGMENT_SHADER } from "@/lib/dot-matrix-shaders";
 
 export type DotMatrixProps = {
@@ -28,7 +28,7 @@ export function DotMatrix({ className = "", ...props }: DotMatrixProps) {
     if (!webgl.hasContext) return;
 
     const opts = optionsRef.current;
-    const gl = webgl.gl;
+    const gl = webgl.getContext();
     if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 

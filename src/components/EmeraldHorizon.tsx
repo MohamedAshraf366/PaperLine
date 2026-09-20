@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
-import { webgl } from "@/lib/webgl-manager";
-import { LUMINA_VERTEX_SHADER, LUMINA_FRAGMENT_SHADER } from "@/lib/emerald-horizon-shaders";
+import { webgl, type DrawFn } from "@/lib/webgl-manager";
+import { EMERALD_HORIZON_VERTEX_SHADER, EMERALD_HORIZON_FRAGMENT_SHADER } from "@/lib/emerald-horizon-shaders";
 
 export type EmeraldHorizonProps = {
   speed?: number;
@@ -28,7 +28,7 @@ export function EmeraldHorizon({ className = "", ...props }: EmeraldHorizonProps
     if (!webgl.hasContext) return;
 
     const opts = optionsRef.current;
-    const gl = webgl.gl;
+    const gl = webgl.getContext();
     if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 

@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { webgl } from "@/lib/webgl-manager";
+import { webgl, type DrawFn } from "@/lib/webgl-manager";
 import {
   BELL_FIELD_VERTEX_SHADER,
   BELL_FIELD_FRAGMENT_SHADER,
@@ -34,7 +34,7 @@ export function BellFieldBackground({
     if (!webgl.hasContext) return;
 
     const opts = optionsRef.current;
-    const gl = webgl.gl;
+    const gl = webgl.getContext();
     if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 

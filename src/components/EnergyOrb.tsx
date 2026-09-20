@@ -1,5 +1,5 @@
 import { useEffect, useRef } from "react";
-import { webgl } from "@/lib/webgl-manager";
+import { webgl, type DrawFn } from "@/lib/webgl-manager";
 import { ENERGY_ORB_VERTEX_SHADER, ENERGY_ORB_CONFIGURABLE_FRAGMENT_SHADER } from "@/lib/energy-orb-shaders";
 
 export type EnergyOrbProps = {
@@ -27,7 +27,7 @@ export function EnergyOrb({ className = "", ...props }: EnergyOrbProps) {
     if (!webgl.hasContext) return;
 
     const opts = optionsRef.current;
-    const gl = webgl.gl;
+    const gl = webgl.getContext();
     if (!gl) return;
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
